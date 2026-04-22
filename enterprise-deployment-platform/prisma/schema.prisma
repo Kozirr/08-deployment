@@ -1,6 +1,6 @@
 // Enum-like fields are stored as strings and validated at the application boundary
 // via Zod (see src/lib/validation/enums.ts: UserRole, SubscriptionTier,
-// SubscriptionStatus, AuditAction). Kept portable for the SQLite->Postgres migration.
+// SubscriptionStatus, AuditAction).
 
 generator client {
   provider = "prisma-client-js"

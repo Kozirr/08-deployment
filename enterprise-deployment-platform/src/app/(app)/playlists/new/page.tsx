@@ -8,7 +8,7 @@ export default async function NewPlaylistPage() {
   try {
     initial = await getWizardDraft();
   } catch {
-    // unauthorized — middleware will have redirected already
+    // unauthorized — proxy will have redirected already
   }
   return <PlaylistWizard initialDraft={initial} />;
 }

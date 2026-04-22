@@ -6,7 +6,6 @@
 .lighthouseci
 node_modules
 coverage
-screenshots
 Dockerfile
 .dockerignore
 docker-compose.yml

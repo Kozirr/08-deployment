@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { verifyAccessToken } from '@/lib/auth/tokens';
 import { ACCESS_COOKIE } from '@/lib/auth/cookies';
-import { authLimiter, globalLimiter, writeLimiter } from '@/lib/rate-limit/tokenBucket';
+import { authLimiter, globalLimiter, writeLimiter } from '@/lib/rate-limit';
 
 const PROTECTED_PAGE_PREFIXES = ['/dashboard', '/library', '/account', '/playlists', '/admin'];
 const PROTECTED_API_PREFIXES = [

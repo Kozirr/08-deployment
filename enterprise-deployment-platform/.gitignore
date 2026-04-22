@@ -12,11 +12,7 @@ out
 build
 next-env.d.ts
 
-# prisma
-prisma/dev.db
-prisma/dev.db-journal
-
-# uploads
+# uploads (dev-only filesystem fallback; Vercel Blob in prod)
 public/uploads/*
 !public/uploads/.gitkeep
 

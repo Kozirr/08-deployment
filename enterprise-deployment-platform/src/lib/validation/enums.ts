@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// SQLite stores these as strings; Zod enforces validity at every boundary.
+// Enums are stored as strings in Postgres; Zod enforces validity at every boundary.
 
 export const UserRole = z.enum(['USER', 'ARTIST', 'ADMIN']);
 export type UserRole = z.infer<typeof UserRole>;

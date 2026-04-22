@@ -1,56 +1,66 @@
-# Enterprise Deployment Platform — Tempo
+# Welcome to 08 Deployment
+***
 
-Production-grade Vercel deployment of **Tempo**, the music-streaming platform
-built in [Project 07](../../07/07-backend-integration). Adds CI/CD automation,
-observability, multi-environment strategy, and compliance scaffolding around an
-otherwise unchanged application.
+## Task
+Project 07 shipped **Tempo** — a Next.js 16 / Prisma / JWT music-streaming app that
+deliberately hybridised three rubric domains (E-commerce billing with HMAC webhooks,
+Gaming-style DRM via `premiumOnly` track gating, Social graph with follows + likes).
+It worked — on one machine, against a local SQLite file, with an in-memory rate
+limiter, filesystem uploads under `public/uploads/`, and hard-coded demo passwords.
 
-- **Live production URL:** `https://tempo.example.dev` (placeholder — set to
-  your own custom domain)
-- **Repository:** single Git repo, deployed to Vercel via GitHub Actions
-- **Base platform:** Next.js 16 App Router · React 19 · TypeScript 5 · Prisma 5
-  · Tailwind v4 · hand-rolled JWT auth
+**The task for Project 08 is to ship that app** — keep the code, change the platform.
+None of what Project 07 relied on survives contact with a serverless host: functions
+are ephemeral and multi-instance, the filesystem is read-only except for `/tmp`, a
+process-local token bucket stops being a rate limiter the moment Vercel spawns a
+second function, and a SQLite file disappears the instant a new deploy rolls.
 
----
+Concretely, the challenge was to:
 
-## Why this project exists
+1. **Choose a platform and justify it** — Vercel vs Netlify vs AWS Amplify vs self-host,
+   with tradeoffs that hold up under interview questions.
+2. **Make the app serverless-safe** — Postgres (Neon), distributed rate limiting
+   (Upstash), object storage (Vercel Blob), standalone build output, cross-subdomain
+   cookies.
+3. **Automate the deploy path** — GitHub Actions for CI, per-PR preview deploys with
+   throwaway Neon branch DBs, a gated production workflow with a post-deploy health
+   probe.
+4. **Make it observable** — Vercel Analytics + Speed Insights for user-observed
+   metrics, Sentry for errors with a custom span on the DRM hotspot, pino structured
+   logs with PII redactions, `/api/health` for uptime probes, Lighthouse CI budgets.
+5. **Run it across environments** — dev (Docker Postgres), preview (Neon branch DB
+   per PR, auto-torn-down), production (Neon main, manual promotion gate, custom
+   domain placeholder), with a matrix that makes it obvious what gets set where.
+6. **Scaffold compliance** — security headers at the edge, HMAC-verified webhooks,
+   audit logging with `/24` IP truncation, 90-day retention cron, secrets-rotation
+   runbook (including the two-phase rotation required by the wizard-cookie HMAC
+   coupling), incident-response runbook, PCI/GDPR/DMCA mapping.
 
-Project 05 built the Spotify-flavoured design system. Project 07 wired a full
-backend behind it (Prisma + Postgres-shaped models on SQLite, JWT auth with
-reuse detection, HMAC-verified billing webhooks, DRM-style entitlements,
-RBAC). **Project 08 ships that backend.** The task is not to re-architect
-Tempo — it's to take the exact same code and make it deploy safely, recover
-quickly, and be observable once real traffic is hitting it.
+The meta-challenge was picking which deploy is "the" deploy. The rubric is Vercel-
+weighted, so Vercel is primary — but a Dockerfile + `docker-compose.yml` stay in the
+tree so the same build runs self-hosted too. Portability as escape hatch, not as
+hedge.
 
-The rubric asks specifically about Vercel platform engineering, so Vercel is
-the primary target. The repo also keeps a Dockerfile + `docker-compose.yml`
-for self-host parity.
+## Description
+**Stack:** Next.js 16.2.3 (App Router, Turbopack, `proxy.ts` edge middleware) ·
+React 19.2.4 · TypeScript 5 strict · Prisma 5 + **Neon Postgres** (per-PR branching)
+· `jose` JWT · `bcryptjs` · `zod` · Tailwind CSS v4 · **Upstash Redis** rate limiter
+· **Vercel Blob** uploads · **Sentry** · **Vercel Analytics + Speed Insights** · pino
+structured logs · GitHub Actions · multi-stage Dockerfile.
 
-## Platform choice rationale
+### Platform choice
 
-| Contender           | Why it fits                                                       | Why it's secondary                                                                |
-| ------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| **Vercel**          | First-class Next 16 support, per-PR preview deploys, edge regions, integrated Analytics + Speed Insights, zero-config GitHub flow. | Vendor-specific; function time limits on free tier; no long-running workers.      |
-| Netlify             | Good static/JAMstack story, mature redirect rules.                | Weaker Next App Router support; serverless functions are a second-class add-on.   |
-| AWS Amplify         | If you're already all-in on AWS, the identity story is strongest. | Build pipeline is slow; SSR support trails Vercel; config lives in the console.   |
-| Self-host (Docker)  | No vendor lock-in; works on any host; parity across environments. | Every capability (edge routing, rate limiting, secrets) you get free from Vercel has to be rebuilt. |
+| Contender           | Why it fits                                                                           | Why it's secondary                                                                |
+| ------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **Vercel**          | First-class Next 16 support, per-PR previews, edge regions, integrated Analytics + Speed Insights, zero-config GitHub flow. | Vendor-specific; function time limits on free tier; no long-running workers.      |
+| Netlify             | Good static / JAMstack story, mature redirect rules.                                  | Weaker App Router support; serverless functions are a second-class add-on.        |
+| AWS Amplify         | Strongest identity story if you're already all-in on AWS.                             | Slow build pipeline; SSR trails Vercel; config lives in the console, not Git.     |
+| Self-host (Docker)  | Zero lock-in; works anywhere; full parity across environments.                        | Every capability you get free from Vercel (edge routing, rate limiting, secrets) has to be rebuilt. |
 
-**Picked:** Vercel for primary hosting, Neon for the database (per-branch
-ephemeral DBs match Vercel preview deploys), Upstash for distributed rate
-limiting, Vercel Blob for uploads, Sentry for error tracking.
+**Picked:** Vercel for hosting, Neon for Postgres (per-branch ephemeral DBs match
+preview deploys one-to-one), Upstash for the distributed rate limiter, Vercel Blob
+for uploads, Sentry for error tracking.
 
-## Stack
-
-- **Runtime:** Next.js 16.2.3 App Router (React 19.2.4, TypeScript 5, Tailwind v4)
-- **Auth:** hand-rolled JWT via `jose` + `bcryptjs`, DB-backed sessions, refresh-token reuse detection
-- **Database:** Neon Postgres (was SQLite in 07 — swapped here)
-- **Cache / rate limit:** Upstash Redis via `@upstash/ratelimit`
-- **File storage:** Vercel Blob (was `public/uploads/` in 07 — swapped here)
-- **Observability:** Vercel Analytics + Speed Insights, Sentry (`@sentry/nextjs`), pino server logs
-- **CI/CD:** GitHub Actions (ci · preview · production · lighthouse · security)
-- **Container parity:** multi-stage `Dockerfile` + `docker-compose.yml`
-
-## Architecture
+### Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -60,8 +70,8 @@ limiting, Vercel Blob for uploads, Sentry for error tracking.
 │   │  fra1 edge  │ ───────────────────▶│  Node functions      │           │
 │   │  + CDN      │   auth / rate-lim   │  (pages + API)       │           │
 │   └─────────────┘   request-id        └──────────────────────┘           │
-│                                                │                          │
-└────────────────────────────────────────────────┼──────────────────────────┘
+│                                                │                         │
+└────────────────────────────────────────────────┼─────────────────────────┘
                                                  │
                            ┌─────────────────────┼─────────────────────┐
                            ▼                     ▼                     ▼
@@ -69,81 +79,30 @@ limiting, Vercel Blob for uploads, Sentry for error tracking.
                     │   Neon   │          │  Upstash  │         │  Vercel   │
                     │ Postgres │          │   Redis   │         │   Blob    │
                     └──────────┘          └───────────┘         └───────────┘
-                    (schema,               (rate limit           (playlist
-                     sessions,              buckets,              covers)
-                     audit log)             auth+global+write)
+                     schema,              rate-limit            playlist
+                     sessions,            buckets               covers
+                     audit log            (auth/global/write)
 
                                   Telemetry
-                          ┌────────────────────────┐
-                          │ Sentry  ·  Analytics   │
-                          │         ·  Speed Insights
-                          └────────────────────────┘
+                          ┌─────────────────────────────┐
+                          │ Sentry · Analytics · Speed  │
+                          └─────────────────────────────┘
 ```
 
-### Key Vercel properties we lean on
+### Vercel properties the app leans on
 
-- **Standalone build** — `next.config.ts → output: 'standalone'` gives the
-  Dockerfile a minimal runner image and speeds up cold starts on Vercel.
-- **Regions** — primary region `fra1` (Frankfurt). Edge-runtime for the
-  `proxy.ts` middleware so auth + rate-limit happen close to the user.
-- **Filesystem is ephemeral** — no feature in the app writes to disk. Uploads
-  go to Vercel Blob; logs go to the log drain; the DB is Neon.
-- **Secrets live in Vercel env** — pulled locally via `vercel env pull`.
-- **Cron jobs** — `vercel.json` declares a nightly audit-retention sweep.
+- **Standalone build** — `next.config.ts → output: 'standalone'` produces a trimmed
+  `server.js` entry. On Vercel it shrinks cold starts; in the Dockerfile it cuts the
+  runner image from ~900 MB to ~150 MB.
+- **Edge region** — `vercel.json → regions: ["fra1"]` (Frankfurt). `proxy.ts` runs
+  at the edge so auth + rate-limit happen close to the user.
+- **Ephemeral filesystem** — uploads go to Vercel Blob, logs to the log drain, DB is
+  Neon. Nothing writes to disk in production.
+- **Secrets in Vercel env** — pulled locally via `vercel env pull`.
+- **Cron jobs** — `vercel.json` declares the nightly audit-retention sweep.
 - **Function `maxDuration`** — bumped to 30 s for webhooks and admin routes.
 
-## Getting started (local development)
-
-```bash
-# 1. Install
-npm ci                              # postinstall runs `prisma generate`
-
-# 2. Start Postgres
-docker compose up -d db
-
-# 3. Environment
-cp .env.example .env.local
-# Edit .env.local — set POSTGRES_PRISMA_URL to postgres://tempo:tempo@localhost:5432/tempo
-# Generate JWT + webhook secrets: openssl rand -base64 48
-
-# 4. Database
-npx prisma migrate deploy            # applies the Postgres baseline
-ALLOW_SEED=true npm run db:seed      # seeds catalog + demo users, prints passwords
-
-# 5. Run
-npm run dev                          # http://localhost:3000
-```
-
-**Health check:** `curl http://localhost:3000/api/health` should return `{ ok: true, db: "up" }`.
-
-## Deploying to Vercel
-
-See [`docs/environments.md`](./docs/environments.md) for the full env-var matrix
-and per-environment setup. The short version:
-
-```bash
-# One-time: link this repo to a Vercel project
-vercel link
-
-# Set secrets (production + preview scopes)
-vercel env add POSTGRES_PRISMA_URL production
-vercel env add POSTGRES_URL_NON_POOLING production
-vercel env add JWT_ACCESS_SECRET production
-vercel env add JWT_REFRESH_SECRET production
-vercel env add WEBHOOK_SECRET production
-vercel env add CRON_SECRET production
-vercel env add NEXT_PUBLIC_SENTRY_DSN production
-# ...repeat for preview
-
-# Deploy
-git push origin main                 # triggers .github/workflows/production.yml
-```
-
-GitHub Actions handles preview deploys on every PR (see
-`.github/workflows/preview.yml`) and only allows production deploys through
-the `production` environment's required-reviewer gate.
-
-## CI/CD pipeline
+### CI/CD pipeline
 
 | Workflow        | Trigger                          | What it does                                                                  |
 | --------------- | -------------------------------- | ----------------------------------------------------------------------------- |
@@ -153,147 +112,168 @@ the `production` environment's required-reviewer gate.
 | `lighthouse.yml`| PR open/sync                     | Audits preview URL against `lighthouserc.json` budgets                        |
 | `security.yml`  | PR + weekly cron                 | `npm audit`, dependency review, CodeQL                                        |
 
-Branch protection (configured on GitHub, not in the repo):
+The `production` workflow uses a GitHub `production` environment with a required
+reviewer — **no automatic production deploys**, only a one-click promotion.
+Branch-protection expectations (required checks, linear history, `CODEOWNERS` review
+on `prisma/` and `src/lib/auth/`) are documented but live in the GitHub UI, not in
+the repo.
 
-- Required status checks: `ci`, `lighthouse`, `security`.
-- Required approving reviews: 1.
-- Require linear history.
-- Require `CODEOWNERS` review for `prisma/` and `src/lib/auth/`.
-
-## Observability
+### Observability
 
 - **Core Web Vitals** — Vercel Speed Insights (LCP, INP, CLS, TTFB).
-- **Product analytics** — Vercel Analytics (privacy-friendly, no cookies).
-- **Errors** — Sentry with source maps, session replay on error only,
-  privacy-safe masking.
-- **Custom spans** — `canPlayTrack` (the DRM hotspot) is wrapped in a Sentry
-  span so gate decisions are traceable per request.
-- **Structured logs** — pino on the server; JSON lines go to Vercel log drains,
-  pretty-printed locally. All logs include a `service`, `env`, `region` base
-  context and redact `cookie`, `authorization`, and password-shaped fields.
+- **Analytics** — Vercel Analytics (privacy-friendly, no cookies).
+- **Errors** — Sentry with source maps, session replay on error only, `maskAllText`
+  + `blockAllMedia`, tunnelled through `/monitoring` so ad-blockers don't drop events.
+- **Custom span** — `canPlayTrack` (the DRM hotspot) is wrapped in a Sentry span so
+  gate decisions are traceable per request.
+- **Structured logs** — pino on the server, JSON to Vercel log drains, pretty in dev.
+  Redacts `cookie`, `authorization`, `password`, and token-shaped fields.
 - **Health probe** — `GET /api/health` does `SELECT 1` on Postgres and returns
-  `{ ok, db, commit, env, region }` with a 200/503 status.
-- **Request correlation** — `x-request-id` injected by the proxy, emitted in
-  logs and propagated to Sentry breadcrumbs.
+  `{ ok, db, commit, env, region, latencyMs }` with a 200 or 503.
+- **Request correlation** — `x-request-id` injected at the edge, propagated to logs
+  and Sentry breadcrumbs.
 
-## Environments
+### Environments
 
-Three environments, each with its own database, cache, and secret scope. See
-[`docs/environments.md`](./docs/environments.md) for the full variable matrix.
+Three environments, each with its own DB, cache, secrets, and Sentry env tag. Full
+matrix in [`docs/environments.md`](./docs/environments.md).
 
-- **Production** — `main` branch, Neon main branch DB, custom domain, manual
-  promotion gate via GitHub Actions.
-- **Preview** — every PR gets a Vercel preview URL + a Neon branch DB. Torn
-  down when the PR closes.
-- **Development** — `vercel env pull` → local Postgres via Docker → Upstash
-  falls back to an in-memory token bucket.
+- **Production** — `main` branch, Neon main DB, custom domain, manual promotion gate.
+- **Preview** — every PR gets a distinct Vercel URL + a fresh Neon branch DB. Torn
+  down on PR close. Lets two reviewers touch billing/DRM logic the same weekend
+  without clobbering each other's data.
+- **Development** — `vercel env pull`, local Postgres via `docker compose`, Upstash
+  falls back to an in-memory bucket when its env vars are unset.
 
-## Security & compliance
+### Security & compliance
 
-- **Security headers** (CSP with nonces, HSTS 2y+preload, X-Frame-Options DENY,
-  Referrer-Policy strict-origin-when-cross-origin, Permissions-Policy,
-  X-Content-Type-Options nosniff) — set in `next.config.ts → headers()`, so
-  they apply to every route, not just HTML responses.
-- **Disclosure policy** — see [`SECURITY.md`](./SECURITY.md).
-- **Compliance scaffolding** — PCI-adjacent (no PAN stored, HMAC webhooks),
-  GDPR (audit IP truncation, session revoke, 90-day retention cron),
-  DMCA-adjacent framing (Track.premiumOnly gate audited per request).
-  Full mapping in [`DEPLOYMENT-INSIGHTS.md`](./DEPLOYMENT-INSIGHTS.md#8-compliance-mapping-what-the-audit-trail-already-gives-us).
-- **Incident-response + secrets-rotation runbooks** in
-  [`DEPLOYMENT-INSIGHTS.md`](./DEPLOYMENT-INSIGHTS.md).
-- **Audit-log retention** — 90 days rolling; see
-  [`docs/audit-retention.md`](./docs/audit-retention.md).
+- **Security headers** set in `next.config.ts → headers()` (applies to every route,
+  not just HTML): CSP, HSTS `max-age=63072000; includeSubDomains; preload`,
+  X-Frame-Options DENY, Referrer-Policy, Permissions-Policy, X-Content-Type-Options.
+- **Defence-in-depth summary** in [`SECURITY.md`](./SECURITY.md) plus the disclosure
+  contact + out-of-scope list.
+- **Compliance scaffolding** in [`DEPLOYMENT-INSIGHTS.md`](./DEPLOYMENT-INSIGHTS.md)
+  §8: PCI-adjacent (no PAN stored, HMAC webhooks), GDPR (IP `/24` truncation, session
+  revoke, 90-day retention), DMCA framing (`premiumOnly` gate audited per request).
+- **Runbooks** — §5 secrets rotation (with the two-phase wizard-cookie dual-accept
+  procedure), §9 incident response.
+- **Audit retention** — 90 days, enforced by the Vercel cron declared in
+  `vercel.json`. Policy + runbook in [`docs/audit-retention.md`](./docs/audit-retention.md).
 
-## Project layout
+### Project layout
 
 ```
 enterprise-deployment-platform/
 ├── .github/
-│   ├── workflows/          # ci · preview · production · lighthouse · security
-│   ├── dependabot.yml      # weekly npm + actions + docker updates
+│   ├── workflows/          ci · preview · production · lighthouse · security
+│   ├── dependabot.yml
 │   └── CODEOWNERS
 ├── docs/
-│   ├── environments.md     # env-var matrix across dev/preview/prod
-│   └── audit-retention.md  # 90-day retention policy + cron
+│   ├── environments.md     env-var matrix across dev/preview/prod
+│   └── audit-retention.md  90-day policy + runbook
 ├── prisma/
-│   ├── schema.prisma       # Postgres provider, 12 models, all enums-as-strings
-│   └── seed.ts             # ALLOW_SEED gated, per-user random passwords in non-dev
-├── public/                 # static assets
+│   ├── schema.prisma       Postgres provider, 12 models, enums-as-strings
+│   ├── migrations/         0001_init_postgres baseline
+│   └── seed.ts             ALLOW_SEED gated, per-user random passwords in non-dev
+├── public/                 static assets
 ├── src/
-│   ├── app/                # Next App Router (pages, API, server actions)
-│   │   └── api/health/     # DB-pinging liveness probe
-│   ├── components/         # UI kit inherited from project 05
+│   ├── app/                App Router (pages, API, server actions)
+│   │   └── api/health/     DB-pinging liveness probe
+│   ├── components/         UI kit inherited from Project 05
 │   ├── lib/
-│   │   ├── auth/           # JWT, sessions, cookies (COOKIE_DOMAIN wired)
-│   │   ├── rate-limit/     # Upstash adapter + in-memory fallback
-│   │   ├── entitlements.ts # DRM gate, Sentry-span instrumented
-│   │   ├── log/logger.ts   # pino + redactions
-│   │   └── audit/          # audit log with IP truncation
-│   ├── types/
-│   └── proxy.ts            # Next 16 edge proxy — auth + rate-limit + request-id
-├── instrumentation.ts      # Sentry server/edge init
+│   │   ├── auth/           JWT, sessions, cookies (COOKIE_DOMAIN wired)
+│   │   ├── rate-limit/     Upstash adapter + in-memory fallback
+│   │   ├── entitlements.ts DRM gate, Sentry-span instrumented
+│   │   ├── log/logger.ts   pino + redactions
+│   │   └── audit/          audit log with IP /24 truncation
+│   └── proxy.ts            Next 16 edge proxy — auth + rate-limit + request-id
+├── instrumentation.ts      Sentry server/edge init
 ├── sentry.{client,server,edge}.config.ts
-├── next.config.ts          # standalone output + security headers + Sentry wrap
-├── vercel.json             # regions + function maxDuration + crons
-├── lighthouserc.json       # perf budgets for CI
-├── Dockerfile              # multi-stage, self-host parity
-├── docker-compose.yml      # Postgres + app for local prod-parity runs
-├── .env.example            # full env-var catalogue with comments
-├── README.md               # this file
-├── DEPLOYMENT-INSIGHTS.md  # learning log (10 sections)
-└── SECURITY.md             # disclosure policy
+├── next.config.ts          standalone output + security headers + Sentry wrap
+├── vercel.json             regions + function maxDuration + crons
+├── lighthouserc.json       perf budgets for CI
+├── Dockerfile              multi-stage, self-host parity
+├── docker-compose.yml      Postgres + app for local prod-parity runs
+├── .env.example            full env-var catalogue
+├── DEPLOYMENT-INSIGHTS.md  learning log (10 sections)
+└── SECURITY.md             disclosure policy
 ```
 
-## Pre-deployment fixes that shipped with this project
+## Installation
+Requires Node.js 20+ and Docker (for local Postgres). Clone the repo, then:
 
-Carried over from Project 07 with the following changes to make the app
-serverless-safe:
-
-1. `next.config.ts` — standalone output, security headers, Sentry wrap.
-2. `package.json` — `postinstall: prisma generate`, `vercel-build` script.
-3. `prisma/schema.prisma` — Postgres provider + `directUrl` for migrations.
-4. `src/app/actions/upload.ts` — `@vercel/blob` for uploads; FS is dev-only fallback.
-5. `src/lib/auth/cookies.ts` — `COOKIE_DOMAIN` wired for cross-subdomain cookies.
-6. `prisma/seed.ts` — `ALLOW_SEED` gate, per-user random passwords in non-dev.
-7. `src/lib/rate-limit/` — Upstash Redis adapter preserving the three named limiters.
-8. `src/app/api/health/route.ts` — post-deploy smoke + uptime probe.
-
-(Project 07's `src/proxy.ts` was kept as-is — it's already on the Next.js 16
-proxy convention, which replaced `middleware.ts` in Next 16.)
-
-## Verification
-
-```bash
-# Build verification
-npm ci
-npm run typecheck
-npm run lint
-npm run build                        # produces .next/standalone/
-
-# Functional verification (needs Postgres up + env vars set)
-npm run db:deploy                    # prisma migrate deploy
-ALLOW_SEED=true npm run db:seed
-npm run start
-curl http://localhost:3000/api/health       # 200 { ok: true }
-curl -X POST http://localhost:3000/api/webhooks/billing  # 401 (no HMAC)
-
-# End-to-end
-#  - register / log in via /register and /login
-#  - play a non-premium track → 200
-#  - play a premium-only track as FREE user → 402
-#  - rate-limit check: 11 POSTs to /api/auth/login in one minute → 429 on the 11th
+```
+cp .env.example .env.local
+# Set POSTGRES_PRISMA_URL=postgres://tempo:tempo@localhost:5432/tempo
+# Generate secrets: openssl rand -base64 48  →  JWT_ACCESS_SECRET, JWT_REFRESH_SECRET, WEBHOOK_SECRET
+npm ci                              # postinstall runs `prisma generate`
+docker compose up -d db             # Postgres 16 on :5432
+npx prisma migrate deploy           # applies the 0001_init_postgres baseline
+ALLOW_SEED=true npm run db:seed     # seeds catalog + demo users, prints random passwords
 ```
 
-## Related
+Vercel deploy (assumes `gh` + `vercel` CLIs are linked):
 
+```
+vercel link                         # one-time: connect to the Vercel project
+vercel env add POSTGRES_PRISMA_URL production
+vercel env add POSTGRES_URL_NON_POOLING production
+vercel env add JWT_ACCESS_SECRET production
+vercel env add JWT_REFRESH_SECRET production
+vercel env add WEBHOOK_SECRET production
+vercel env add CRON_SECRET production
+vercel env add NEXT_PUBLIC_SENTRY_DSN production
+# ...repeat for preview scope. Full matrix in docs/environments.md.
+git push origin main                # triggers .github/workflows/production.yml
+```
+
+## Usage
+Development server with hot reload on <http://localhost:3000>:
+
+```
+npm run dev
+```
+
+Other scripts:
+
+```
+npm run build      # production build (standalone output)
+npm run start      # run the built server
+npm run typecheck  # tsc --noEmit
+npm run lint       # ESLint
+npm run lhci       # Lighthouse CI against preview URL
+npm run db:reset   # wipe + re-migrate + re-seed
+```
+
+Verify the deployment end-to-end:
+
+1. `curl http://localhost:3000/api/health` — 200 `{ ok: true, db: "up" }`.
+2. **Auth round-trip** — register at `/register`, log in at `/login`.
+3. **DRM gate** — downgrade to FREE via `/account`, try to play a `premiumOnly`
+   track: `POST /api/playback/start` returns `402`. Upgrade back to PREMIUM: `200`.
+4. **Webhook HMAC** — `curl -X POST /api/webhooks/billing` with no signature: `401`.
+5. **Distributed rate limit** — 11 `POST /api/auth/login` calls from the same IP in
+   one minute: `429` on the 11th (10/min `authLimiter`). With Upstash env vars set,
+   the count is shared across functions; without them, the in-memory fallback kicks
+   in for dev.
+6. **Preview deploy** — open a dry-run PR on a scratch branch. `ci`, `lighthouse`,
+   `security` workflows go green; preview URL appears as a PR comment; Lighthouse
+   comment shows budgets met.
+
+Further reading:
+
+- [`DEPLOYMENT-INSIGHTS.md`](./DEPLOYMENT-INSIGHTS.md) — the 10-section learning log
+  (Vercel rationale, standalone output gotchas, Prisma build pipeline, secrets
+  rotation, observability philosophy, Neon branching, compliance mapping, incident
+  response, follow-ups).
+- [`SECURITY.md`](./SECURITY.md) — disclosure policy + defence-in-depth summary.
+- [`docs/environments.md`](./docs/environments.md) — env-var matrix.
+- [`docs/audit-retention.md`](./docs/audit-retention.md) — retention policy.
 - [Project 05 — Spotify design system](../../05/05-styling)
 - [Project 07 — Backend integration](../../07/07-backend-integration)
-- [`DEPLOYMENT-INSIGHTS.md`](./DEPLOYMENT-INSIGHTS.md) — the learning log
-- [`SECURITY.md`](./SECURITY.md) — disclosure policy
-- [`docs/environments.md`](./docs/environments.md) — env matrix
-- [`docs/audit-retention.md`](./docs/audit-retention.md) — retention policy
 
-## The Core Team
+### The Core Team
 
-<span><i>Made at <a href='https://qwasar.io'>Qwasar SV — Software Engineering School</a></i></span>
-<span><img alt='Qwasar SV — Software Engineering School Logo' src='https://storage.googleapis.com/qwasar-public/qwasar-logo_50x50.png' width='20px' /></span>
+
+<span><i>Made at <a href='https://qwasar.io'>Qwasar SV -- Software Engineering School</a></i></span>
+<span><img alt='Qwasar SV -- Software Engineering School's Logo' src='https://storage.googleapis.com/qwasar-public/qwasar-logo_50x50.png' width='20px' /></span>

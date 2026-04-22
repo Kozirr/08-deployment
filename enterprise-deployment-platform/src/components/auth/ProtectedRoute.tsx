@@ -12,10 +12,9 @@ type Props = {
 };
 
 /**
- * Client guard — complements the server-side middleware.
- * Redirects unauthenticated users to /login?next=<current path>.
- * Renders fallback when role doesn't match (middleware already blocks,
- * but this avoids flashes during client-side navigation).
+ * Client guard — complements the edge proxy. Redirects unauthenticated users
+ * to /login?next=<current path>. Renders fallback when role doesn't match
+ * (the proxy already blocks, but this avoids flashes during client-side nav).
  */
 export function ProtectedRoute({ children, roles, fallback = null }: Props) {
   const { user, isLoading } = useAuth();
