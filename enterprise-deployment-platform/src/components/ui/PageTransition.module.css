@@ -1,0 +1,21 @@
+.fade {
+  animation: pageIn var(--duration-base) var(--ease-spotify);
+}
+
+@keyframes pageIn {
+  from {
+    opacity: 0.3;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade {
+    animation: none;
+  }
+}

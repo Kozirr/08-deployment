@@ -1,0 +1,207 @@
+.bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: var(--color-spotify-gray-900);
+  border-top: 1px solid var(--color-border);
+  box-shadow: var(--shadow-player);
+  z-index: 40;
+}
+
+.empty {
+  justify-content: center;
+  text-align: center;
+  padding: 1rem;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  color: var(--color-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 9999px;
+  transition: color var(--duration-fast) var(--ease-spotify);
+}
+
+.iconBtn:hover {
+  color: var(--color-foreground);
+}
+
+.playBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  border: none;
+  background: var(--color-foreground);
+  color: var(--color-background);
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast) var(--ease-spotify),
+    background-color var(--duration-fast) var(--ease-spotify);
+}
+
+.playBtn:hover {
+  transform: scale(1.08);
+}
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 36rem;
+}
+
+.progress,
+.volumeSlider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--color-foreground) 0%,
+    var(--color-foreground) var(--progress, 0%),
+    var(--color-spotify-gray-500) var(--progress, 0%),
+    var(--color-spotify-gray-500) 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+
+.volumeSlider {
+  background: linear-gradient(
+    to right,
+    var(--color-foreground) 0%,
+    var(--color-foreground) var(--volume, 70%),
+    var(--color-spotify-gray-500) var(--volume, 70%),
+    var(--color-spotify-gray-500) 100%
+  );
+}
+
+.progress::-webkit-slider-thumb,
+.volumeSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-foreground);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-spotify);
+  box-shadow: 0 0 6px rgb(0 0 0 / 40%);
+}
+
+.progress::-moz-range-thumb,
+.volumeSlider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-foreground);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-spotify);
+}
+
+.progress:hover,
+.volumeSlider:hover {
+  background-image: linear-gradient(
+    to right,
+    var(--color-spotify-green-400) 0%,
+    var(--color-spotify-green-400) var(--progress, 0%),
+    var(--color-spotify-gray-500) var(--progress, 0%),
+    var(--color-spotify-gray-500) 100%
+  );
+}
+
+.volumeSlider:hover {
+  background-image: linear-gradient(
+    to right,
+    var(--color-spotify-green-400) 0%,
+    var(--color-spotify-green-400) var(--volume, 70%),
+    var(--color-spotify-gray-500) var(--volume, 70%),
+    var(--color-spotify-gray-500) 100%
+  );
+}
+
+.progress:hover::-webkit-slider-thumb,
+.volumeSlider:hover::-webkit-slider-thumb,
+.progress:focus-visible::-webkit-slider-thumb,
+.volumeSlider:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-muted);
+  max-width: 10rem;
+}
+
+@media (width >= 768px) {
+  .bar {
+    grid-template-columns: 1fr 2fr 1fr;
+    padding: 1rem 1.25rem;
+    gap: 1.5rem;
+  }
+}
+
+@media (width <= 767px) {
+  .volume {
+    display: none;
+  }
+
+  .progressRow {
+    display: none;
+  }
+
+  .bar {
+    grid-template-columns: 1fr auto;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .controls {
+    order: 2;
+  }
+
+  .meta {
+    order: 1;
+  }
+}

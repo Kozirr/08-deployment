@@ -1,0 +1,208 @@
+// Enum-like fields are stored as strings and validated at the application boundary
+// via Zod (see src/lib/validation/enums.ts: UserRole, SubscriptionTier,
+// SubscriptionStatus, AuditAction). Kept portable for the SQLite->Postgres migration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+// ─── Identity ─────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  role         String   @default("USER") // UserRole
+  avatarColor  String   @default("#1db954")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions     Session[]
+  playlists    Playlist[]
+  likes        Like[]
+  follows      Follow[]
+  playEvents   PlayEvent[]
+  subscription Subscription?
+  auditLogs    AuditLog[]    @relation("AuditActor")
+  ownedArtists Artist[]      @relation("ArtistOwner")
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String
+  userAgent        String?
+  ip               String?
+  createdAt        DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+}
+
+// ─── Catalog ──────────────────────────────────────────────────────────────────
+
+model Artist {
+  id               String   @id @default(cuid())
+  name             String
+  bio              String
+  imageColor       String   @default("#1e3a8a")
+  monthlyListeners Int      @default(0)
+  verified         Boolean  @default(false)
+  ownerUserId      String?
+  ownerUser        User?    @relation("ArtistOwner", fields: [ownerUserId], references: [id])
+  createdAt        DateTime @default(now())
+
+  albums    Album[]
+  tracks    Track[]
+  followers Follow[]
+
+  @@index([name])
+}
+
+model Album {
+  id          String   @id @default(cuid())
+  title       String
+  year        Int
+  coverColor  String   @default("#1e3a8a")
+  coverAccent String   @default("#60a5fa")
+  artistId    String
+  artist      Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  tracks Track[]
+
+  @@index([artistId])
+}
+
+model Track {
+  id              String   @id @default(cuid())
+  title           String
+  durationSeconds Int
+  plays           Int      @default(0)
+  explicit        Boolean  @default(false)
+  premiumOnly     Boolean  @default(false)
+  albumId         String
+  album           Album    @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  artistId        String
+  artist          Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+
+  likes          Like[]
+  playEvents     PlayEvent[]
+  playlistTracks PlaylistTrack[]
+
+  @@index([albumId])
+  @@index([artistId])
+  @@index([title])
+}
+
+// ─── Library ──────────────────────────────────────────────────────────────────
+
+model Playlist {
+  id             String   @id @default(cuid())
+  ownerId        String
+  owner          User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title          String
+  description    String   @default("")
+  coverFromColor String   @default("#1db954")
+  coverToColor   String   @default("#0d5f28")
+  isPublic       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tracks PlaylistTrack[]
+
+  @@index([ownerId])
+}
+
+model PlaylistTrack {
+  playlistId String
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  trackId    String
+  track      Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  position   Int
+  addedAt    DateTime @default(now())
+
+  @@id([playlistId, trackId])
+  @@index([playlistId, position])
+}
+
+model Like {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trackId   String
+  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, trackId])
+  @@index([userId])
+}
+
+model Follow {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  artistId  String
+  artist    Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, artistId])
+  @@index([userId])
+  @@index([artistId])
+}
+
+// ─── Billing ──────────────────────────────────────────────────────────────────
+
+model Subscription {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier              String    @default("FREE")   // SubscriptionTier
+  status            String    @default("ACTIVE") // SubscriptionStatus
+  currentPeriodEnd  DateTime?
+  cancelAtPeriodEnd Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+// ─── Playback & Audit ─────────────────────────────────────────────────────────
+
+model PlayEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trackId     String
+  track       Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  startedAt   DateTime @default(now())
+  completedMs Int      @default(0)
+  deviceId    String?
+  source      String?
+
+  @@index([userId, startedAt])
+  @@index([trackId])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorId      String?
+  actor        User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action       String   // AuditAction
+  targetType   String?
+  targetId     String?
+  metadataJson String?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+}

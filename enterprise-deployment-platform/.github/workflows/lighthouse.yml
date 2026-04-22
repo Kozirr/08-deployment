@@ -1,0 +1,57 @@
+name: Lighthouse
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  lighthouse:
+    name: Run Lighthouse CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Wait for the preview deploy to publish before auditing.
+    needs: []
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve preview URL
+        id: preview
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Fall back to the LHCI_PREVIEW_URL env if resolving the Vercel deploy URL fails.
+          URL="${LHCI_PREVIEW_URL:-}"
+          if [ -z "$URL" ]; then
+            URL=$(curl -fsSL "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&limit=20" \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              | node -e "
+                let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{
+                  const j=JSON.parse(d);
+                  const hit=j.deployments.find(x=>x.meta&&x.meta.githubCommitSha==='${COMMIT_SHA}');
+                  if(hit){process.stdout.write('https://'+hit.url);}else{process.exit(2);}
+                })" || echo "")
+          fi
+          if [ -z "$URL" ]; then
+            echo "::warning ::Preview URL not yet available; skipping Lighthouse."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=$URL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Lighthouse CI
+        if: steps.preview.outputs.skip != 'true'
+        run: npx lhci autorun --collect.url=${{ steps.preview.outputs.url }} --collect.url=${{ steps.preview.outputs.url }}/login --upload.target=temporary-public-storage
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}

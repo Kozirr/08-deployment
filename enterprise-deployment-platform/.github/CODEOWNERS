@@ -1,0 +1,18 @@
+# Default owner for everything
+*                           @kozir
+
+# Security-sensitive: auth, sessions, rate limiting, cookies
+/src/lib/auth/              @kozir
+/src/lib/rate-limit/        @kozir
+/src/proxy.ts               @kozir
+/src/app/api/auth/          @kozir
+/src/app/api/webhooks/      @kozir
+
+# Schema + migrations
+/prisma/                    @kozir
+
+# Deploy pipeline
+/.github/workflows/         @kozir
+/vercel.json                @kozir
+/next.config.ts             @kozir
+/Dockerfile                 @kozir
